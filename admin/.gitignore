@@ -1,0 +1,22 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+
+# Visual Studio / VS tooling (often shows up even if you're "just using VS Code")
+.vs/
+*.user
+*.suo
+*.tmp
+*.log
+
+# local secrets/config (if you have any)
+*.local.*
+secrets.*
+# optional: explicitly ignore a known ASP config file name if you use one
+config.asp
+woodjiggery-site/includes/datacon.asp
+
+# Ignore VS Code local settings and SFTP credentials
+sftp.json
