@@ -2,8 +2,6 @@
 
 <%
 response.write Server.MapPath("/")
-
-
 %>
 
 
