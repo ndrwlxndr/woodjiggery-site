@@ -22,3 +22,4 @@ includes/datacon.asp
 # Ignore VS Code local settings and SFTP credentials
 .vscode/
 sftp.json
+.vscode/sftp.json
