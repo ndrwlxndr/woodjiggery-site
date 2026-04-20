@@ -16,7 +16,6 @@ Desktop.ini
 secrets.*
 # optional: explicitly ignore a known ASP config file name if you use one
 config.asp
-includes/conn2.asp
 includes/datacon.asp
 
 # Ignore VS Code local settings and SFTP credentials
