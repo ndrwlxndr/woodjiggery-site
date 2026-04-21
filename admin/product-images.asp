@@ -6,6 +6,7 @@ Response.Buffer = True
 <!--#include virtual="/includes/adovbs.asp"-->
 <!--#include virtual="/includes/datacon.asp"-->
 <!--#include virtual="/includes/upload.asp"-->
+<!--#include virtual="/includes/code.asp"-->
 <%
 Dim conn : Set conn = OpenConn()
 
@@ -87,6 +88,13 @@ Sub InsertImageRow(ByVal pid, ByVal imgPath, ByVal altText, ByVal sortOrder, ByV
   Set cmdA = Nothing
 End Sub
 
+Function GetImageCount(ByVal pid)
+  Dim rsCnt
+  Set rsCnt = conn.Execute("SELECT COUNT(*) AS Cnt FROM dbo.ProductImages WHERE ProductID=" & CLng(pid))
+  GetImageCount = CLng(rsCnt("Cnt"))
+  rsCnt.Close : Set rsCnt = Nothing
+End Function
+
 ' Get product name
 Dim prodName : prodName = ""
 Dim cmdP : Set cmdP = Server.CreateObject("ADODB.Command")
@@ -121,6 +129,13 @@ If Request.ServerVariables("REQUEST_METHOD") = "POST" Then
         sortOrderU = Trim("" & up.Form("SortOrder"))
         If Len(sortOrderU) = 0 Then sortOrderU = 0
         isPrimaryU = ("" & up.Form("IsPrimary") = "1")
+
+        Dim imgCountU : imgCountU = GetImageCount(productId)
+
+        ' If this is the first image ever for this product, force it to primary
+        If imgCountU = 0 Then
+            isPrimaryU = True
+        End If
 
         Dim ext : ext = SafeExt(f.FileName)
         If ext <> "jpg" And ext <> "jpeg" And ext <> "png" And ext <> "webp" And ext <> "gif" Then
@@ -167,6 +182,13 @@ If Request.ServerVariables("REQUEST_METHOD") = "POST" Then
       sortOrderP = Trim("" & up.Form("SortOrder"))
       If Len(sortOrderP) = 0 Then sortOrderP = 0
       isPrimaryP = ("" & up.Form("IsPrimary") = "1")
+
+      Dim imgCountP : imgCountP = GetImageCount(productId)
+
+        ' If this is the first image ever for this product, force it to primary
+        If imgCountP = 0 Then
+        isPrimaryP = True
+        End If
 
       If Len(imagePath) = 0 Then
         errMsg = "ImagePath is required."
@@ -258,7 +280,7 @@ Dim rs : Set rs = conn.Execute(sql)
         <label>SortOrder</label>
         <input name="SortOrder" value="0" />
 
-        <label><input type="checkbox" name="IsPrimary" value="1" /> Set as primary</label>
+        <label><input type="checkbox" name="IsPrimary" value="1" /> Set as primary (first image is automatically primary)</label>
 
         <div style="margin-top:10px;">
           <button class="btn" type="submit">Upload</button>

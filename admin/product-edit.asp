@@ -27,6 +27,7 @@ End Function
 <!--#include virtual="/admin/_auth.asp"-->
 <!--#include virtual="/includes/adovbs.asp"-->
 <!--#include virtual="/includes/datacon.asp"-->
+<!--#include virtual="/includes/code.asp"-->  
 <%
 
 ' Debug helper: prints VB + ADO errors and stops
@@ -147,53 +148,54 @@ cmdI.CommandText = "SET NOCOUNT ON; " & _
                    "VALUES (?,?,?,?,?,?,?,?); " & _
                    "SELECT SCOPE_IDENTITY() AS NewID;"
 
-On Error Resume Next
-Err.Clear
-conn.Errors.Clear
+      On Error Resume Next
+      Err.Clear
+      conn.Errors.Clear
 
-cmdI.Parameters.Append cmdI.CreateParameter("@CategoryID", adInteger, adParamInput, , CLng(CategoryID))
-cmdI.Parameters.Append cmdI.CreateParameter("@Name", adVarWChar, adParamInput, 150, CStr(Name))
-cmdI.Parameters.Append cmdI.CreateParameter("@Slug", adVarWChar, adParamInput, 150, CStr(Slug))
+      cmdI.Parameters.Append cmdI.CreateParameter("@CategoryID", adInteger, adParamInput, , CLng(CategoryID))
+      cmdI.Parameters.Append cmdI.CreateParameter("@Name", adVarWChar, adParamInput, 150, CStr(Name))
+      cmdI.Parameters.Append cmdI.CreateParameter("@Slug", adVarWChar, adParamInput, 150, CStr(Slug))
 
-Dim p, longSize
+      Dim p, longSize
 
-Set p = cmdI.CreateParameter("@ShortDesc", adVarWChar, adParamInput, 300)
-If Len(ShortDesc) = 0 Then p.Value = Null Else p.Value = CStr(ShortDesc)
-cmdI.Parameters.Append p
-Set p = Nothing
+      Set p = cmdI.CreateParameter("@ShortDesc", adVarWChar, adParamInput, 300)
+      If Len(ShortDesc) = 0 Then p.Value = Null Else p.Value = CStr(ShortDesc)
+      cmdI.Parameters.Append p
+      Set p = Nothing
 
-longSize = 1
-If Len(LongDesc) > 0 Then longSize = Len(LongDesc)
-Set p = cmdI.CreateParameter("@LongDesc", adLongVarWChar, adParamInput, longSize)
-If Len(LongDesc) = 0 Then p.Value = Null Else p.Value = CStr(LongDesc)
-cmdI.Parameters.Append p
-Set p = Nothing
+      longSize = 1
+      If Len(LongDesc) > 0 Then longSize = Len(LongDesc)
+      Set p = cmdI.CreateParameter("@LongDesc", adLongVarWChar, adParamInput, longSize)
+      If Len(LongDesc) = 0 Then p.Value = Null Else p.Value = CStr(LongDesc)
+      cmdI.Parameters.Append p
+      Set p = Nothing
 
-Set p = cmdI.CreateParameter("@Price", adCurrency, adParamInput)
-If Len(Trim(Price)) = 0 Then
-  p.Value = Null
-Else
-  p.Value = CDbl(Replace(Replace(Price, "$", ""), ",", ""))
-End If
-cmdI.Parameters.Append p
-Set p = Nothing
+      Set p = cmdI.CreateParameter("@Price", adCurrency, adParamInput)
+      If Len(Trim(Price)) = 0 Then
+        p.Value = Null
+      Else
+        p.Value = CDbl(Replace(Replace(Price, "$", ""), ",", ""))
+      End If
+      cmdI.Parameters.Append p
+      Set p = Nothing
 
-cmdI.Parameters.Append cmdI.CreateParameter("@SortOrder", adInteger, adParamInput, , CLng(SortOrder))
-cmdI.Parameters.Append cmdI.CreateParameter("@IsActive", adBoolean, adParamInput, , CBool(IsActive))
+      cmdI.Parameters.Append cmdI.CreateParameter("@SortOrder", adInteger, adParamInput, , CLng(SortOrder))
+      cmdI.Parameters.Append cmdI.CreateParameter("@IsActive", adBoolean, adParamInput, , CBool(IsActive))
 
-If Err.Number <> 0 Then DieWithAdo "Parameter build failed (INSERT)", conn
+      If Err.Number <> 0 Then DieWithAdo "Parameter build failed (INSERT)", conn
 
-Dim rsNew : Set rsNew = cmdI.Execute
-If Err.Number <> 0 Then DieWithAdo "cmdI.Execute failed (INSERT)", conn
+      Dim rsNew : Set rsNew = cmdI.Execute
+      If Err.Number <> 0 Then DieWithAdo "cmdI.Execute failed (INSERT)", conn
 
-productId = CLng(rsNew("NewID"))
-rsNew.Close : Set rsNew = Nothing
-Set cmdI = Nothing
-msg = "Product created."
+      productId = CLng(rsNew("NewID"))
+      rsNew.Close : Set rsNew = Nothing
+      Set cmdI = Nothing
+      msg = "Product created."
 
-On Error GoTo 0
-    Else
+      On Error GoTo 0
+          Else
       ' UPDATE
+
       Dim cmdU : Set cmdU = Server.CreateObject("ADODB.Command")
       Set cmdU.ActiveConnection = conn
       cmdU.CommandType = adCmdText
@@ -204,14 +206,10 @@ On Error GoTo 0
       cmdU.Parameters.Append cmdU.CreateParameter("@CategoryID", adInteger,  adParamInput, , CInt(CategoryID))
       cmdU.Parameters.Append cmdU.CreateParameter("@Name",       adVarWChar, adParamInput, 150, Name)
       cmdU.Parameters.Append cmdU.CreateParameter("@Slug",       adVarWChar, adParamInput, 150, Slug)
-      cmdU.Parameters.Append cmdU.CreateParameter("@ShortDesc",  adVarWChar, adParamInput, 300, IIf(Len(ShortDesc)=0, Null, ShortDesc))
-      cmdU.Parameters.Append cmdU.CreateParameter("@LongDesc",   adLongVarWChar, adParamInput, -1, IIf(Len(LongDesc)=0, Null, LongDesc))
+      cmdU.Parameters.Append cmdU.CreateParameter("@ShortDesc", adVarWChar, adParamInput, 300, NullIfEmpty(ShortDesc))
+      cmdU.Parameters.Append cmdU.CreateParameter("@LongDesc", adLongVarWChar, adParamInput, SizeOrOne(LongDesc), NullIfEmpty(LongDesc))
 
-      If Len(Price) = 0 Then
-        cmdU.Parameters.Append cmdU.CreateParameter("@Price", adCurrency, adParamInput, , Null)
-      Else
-        cmdU.Parameters.Append cmdU.CreateParameter("@Price", adCurrency, adParamInput, , CDbl(Price))
-      End If
+      cmdU.Parameters.Append cmdU.CreateParameter("@Price", adCurrency, adParamInput, , NullIfBlankNumber(Price))
 
       cmdU.Parameters.Append cmdU.CreateParameter("@SortOrder", adInteger,  adParamInput, , CInt(SortOrder))
       cmdU.Parameters.Append cmdU.CreateParameter("@IsActive",  adBoolean,  adParamInput, , CBool(IsActive))
