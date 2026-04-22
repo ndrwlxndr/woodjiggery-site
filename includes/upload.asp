@@ -26,20 +26,62 @@ Class Upload
     ParseRequest
   End Sub
 
-  Private Sub ParseRequest()
-    Dim total, bin, ct
-    total = Request.TotalBytes
-    If total <= 0 Then Exit Sub
+Private Sub ParseRequest()
+  Dim total, ct
+  total = Request.TotalBytes
+  If total <= 0 Then Exit Sub
 
-    bin = Request.BinaryRead(total)
-    ct = LCase("" & Request.ServerVariables("CONTENT_TYPE"))
+  ct = LCase("" & Request.ServerVariables("CONTENT_TYPE"))
 
-    If InStr(ct, "multipart/form-data") > 0 And InStr(ct, "boundary=") > 0 Then
-      ParseMultipart bin, ct
-    Else
-      ParseUrlEncoded bin
+  If InStr(ct, "multipart/form-data") > 0 And InStr(ct, "boundary=") > 0 Then
+    Dim bin
+    bin = Request.BinaryRead(total)   ' ONLY for multipart uploads
+    ParseMultipart bin, ct
+  Else
+    ' Normal POST: do NOT BinaryRead
+    Dim k
+    For Each k In Request.Form
+      mForm(k) = Request.Form(k)
+    Next
+  End If
+End Sub
+
+' Called when the client-side JS interceptor encoded the file as base64
+' and posted everything as application/x-www-form-urlencoded.
+Private Sub ParseBase64Upload(ByVal fileFieldName)
+  Dim k
+  For Each k In Request.Form
+    If Left(k, 4) <> "_b64" Then
+      mForm(k) = Request.Form(k)
     End If
-  End Sub
+  Next
+
+  Dim b64Data : b64Data = Trim("" & Request.Form("_b64data"))
+  Dim b64Name : b64Name = Trim("" & Request.Form("_b64name"))
+  Dim b64Type : b64Type = Trim("" & Request.Form("_b64type"))
+
+  If Len(b64Data) > 0 And Len(b64Name) > 0 Then
+    Dim blob : blob = Base64DecodeBytes(b64Data)
+    Dim fileObj : Set fileObj = New UploadFile
+    fileObj.Name = fileFieldName
+    fileObj.FileName = BaseFileName(b64Name)
+    fileObj.ContentType = b64Type
+    fileObj.Blob = blob
+    mFiles(fileFieldName) = fileObj
+  End If
+End Sub
+
+' Decode a base64 string to a binary byte array using MSXML
+Private Function Base64DecodeBytes(ByVal sBase64)
+  Dim oDoc, oNode
+  Set oDoc = Server.CreateObject("MSXML2.DOMDocument")
+  Set oNode = oDoc.createElement("b64")
+  oNode.dataType = "bin.base64"
+  oNode.text = sBase64
+  Base64DecodeBytes = oNode.nodeTypedValue
+  Set oNode = Nothing
+  Set oDoc = Nothing
+End Function
 
   Private Sub ParseUrlEncoded(bin)
     Dim s, parts, i, kv, k, v, p

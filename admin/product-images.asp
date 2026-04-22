@@ -5,7 +5,6 @@ Response.Buffer = True
 <!--#include virtual="/admin/_auth.asp"-->
 <!--#include virtual="/includes/adovbs.asp"-->
 <!--#include virtual="/includes/datacon.asp"-->
-<!--#include virtual="/includes/upload.asp"-->
 <!--#include virtual="/includes/code.asp"-->
 <%
 Dim conn : Set conn = OpenConn()
@@ -88,6 +87,30 @@ Sub InsertImageRow(ByVal pid, ByVal imgPath, ByVal altText, ByVal sortOrder, ByV
   Set cmdA = Nothing
 End Sub
 
+Sub UpdateImageRow(ByVal pid, ByVal imageId, ByVal imgPath, ByVal altText, ByVal sortOrder, ByVal isPrimary)
+  Dim cmdU : Set cmdU = Server.CreateObject("ADODB.Command")
+  Set cmdU.ActiveConnection = conn
+  cmdU.CommandType = adCmdText
+  cmdU.CommandText = "UPDATE dbo.ProductImages SET ImagePath=?, AltText=?, SortOrder=?, IsPrimary=? WHERE ProductID=? AND ImageID=?;"
+  cmdU.Parameters.Append cmdU.CreateParameter("@Path", adVarWChar, adParamInput, 260, CStr(imgPath))
+
+  Dim pAltU : Set pAltU = cmdU.CreateParameter("@Alt", adVarWChar, adParamInput, 200)
+  If Len(Trim(altText)) = 0 Then
+    pAltU.Value = Null
+  Else
+    pAltU.Value = CStr(altText)
+  End If
+  cmdU.Parameters.Append pAltU
+  Set pAltU = Nothing
+
+  cmdU.Parameters.Append cmdU.CreateParameter("@Sort", adInteger, adParamInput, , CLng(sortOrder))
+  cmdU.Parameters.Append cmdU.CreateParameter("@Prim", adBoolean, adParamInput, , CBool(isPrimary))
+  cmdU.Parameters.Append cmdU.CreateParameter("@PID", adInteger, adParamInput, , CInt(pid))
+  cmdU.Parameters.Append cmdU.CreateParameter("@IID", adInteger, adParamInput, , CInt(imageId))
+  cmdU.Execute
+  Set cmdU = Nothing
+End Sub
+
 Function GetImageCount(ByVal pid)
   Dim rsCnt
   Set rsCnt = conn.Execute("SELECT COUNT(*) AS Cnt FROM dbo.ProductImages WHERE ProductID=" & CLng(pid))
@@ -97,6 +120,14 @@ End Function
 
 ' Get product name
 Dim prodName : prodName = ""
+Dim editImageId : editImageId = 0
+If Len(Request.QueryString("editid")) > 0 Then editImageId = CLng(Request.QueryString("editid"))
+
+Dim editImagePath : editImagePath = ""
+Dim editAltText : editAltText = ""
+Dim editSortOrder : editSortOrder = 0
+Dim editIsPrimary : editIsPrimary = False
+
 Dim cmdP : Set cmdP = Server.CreateObject("ADODB.Command")
 Set cmdP.ActiveConnection = conn
 cmdP.CommandType = adCmdText
@@ -107,81 +138,40 @@ If Not rsP.EOF Then prodName = rsP("Name")
 rsP.Close : Set rsP = Nothing
 Set cmdP = Nothing
 
-' ------------------------------
-' POST handling (uses Upload class for file uploads, but also handles non-file actions like setting primary and deleting)
-' ------------------------------
 If Request.ServerVariables("REQUEST_METHOD") = "POST" Then
+    Dim actionPost : actionPost = LCase(Trim("" & Request.Form("action")))
 
-  Dim up : Set up = New Upload
-  Dim actionPost : actionPost = LCase(Trim("" & up.Form("action")))
-
-  Select Case actionPost
+    Select Case actionPost
 
     Case "upload"
-      Dim f : Set f = Nothing
-      If up.Files.Exists("imgFile") Then Set f = up.Files("imgFile")
-
-      If f Is Nothing Then
-        errMsg = "No file selected."
+      Dim uploadedFile : uploadedFile = Trim("" & Request.Form("UploadedFileName"))
+      If Len(uploadedFile) = 0 Then
+        errMsg = "No file name returned from upload."
       Else
         Dim altTextU, sortOrderU, isPrimaryU
-        altTextU = Trim("" & up.Form("AltText"))
-        sortOrderU = Trim("" & up.Form("SortOrder"))
+        altTextU   = Trim("" & Request.Form("AltText"))
+        sortOrderU = Trim("" & Request.Form("SortOrder"))
         If Len(sortOrderU) = 0 Then sortOrderU = 0
-        isPrimaryU = ("" & up.Form("IsPrimary") = "1")
+        isPrimaryU = (Request.Form("IsPrimary") = "1")
 
         Dim imgCountU : imgCountU = GetImageCount(productId)
+        If imgCountU = 0 Then isPrimaryU = True
 
-        ' If this is the first image ever for this product, force it to primary
-        If imgCountU = 0 Then
-            isPrimaryU = True
-        End If
+        Dim relFolder : relFolder = "/images/products/" & productId
+        Dim webPath : webPath = relFolder & "/" & uploadedFile
 
-        Dim ext : ext = SafeExt(f.FileName)
-        If ext <> "jpg" And ext <> "jpeg" And ext <> "png" And ext <> "webp" And ext <> "gif" Then
-          errMsg = "Only jpg/jpeg/png/webp/gif allowed."
-        Else
-          ' Ensure /images/products and /images/products/<id>
-          Dim physBase, physFolder, relFolder
-          relFolder = "/images/products/" & productId
-          physBase = Server.MapPath("/images/products")
-          physFolder = Server.MapPath(relFolder)
-
-          EnsureFolder physBase
-          EnsureFolder physFolder
-
-          ' Safe filename
-          Dim baseName, newName
-          baseName = SafeFileBase(prodName)
-          newName = baseName & "_" & _
-                    Year(Now()) & Right("0" & Month(Now()),2) & Right("0" & Day(Now()),2) & "_" & _
-                    Right("0" & Hour(Now()),2) & Right("0" & Minute(Now()),2) & Right("0" & Second(Now()),2) & _
-                    "." & ext
-
-          On Error Resume Next
-          Err.Clear
-          f.SaveToAs physFolder, newName   ' <-- uses the new method
-          If Err.Number <> 0 Then
-            errMsg = "Upload failed: " & Err.Description
-            Err.Clear
-          Else
-            Dim webPath : webPath = relFolder & "/" & newName
-
-            If isPrimaryU Then ClearPrimaries productId
-            InsertImageRow productId, webPath, altTextU, CLng(sortOrderU), isPrimaryU
-            msg = "Image uploaded."
-          End If
-          On Error GoTo 0
-        End If
+        If isPrimaryU Then ClearPrimaries productId
+        InsertImageRow productId, webPath, altTextU, CLng(sortOrderU), isPrimaryU
+        msg = "Image uploaded."
       End If
 
     Case "addpath"
       Dim imagePath, altTextP, sortOrderP, isPrimaryP
-      imagePath = Trim("" & up.Form("ImagePath"))
-      altTextP = Trim("" & up.Form("AltText"))
-      sortOrderP = Trim("" & up.Form("SortOrder"))
+      imagePath = Trim("" & Request.Form("ImagePath"))
+      altTextP = Trim("" & Request.Form("AltText"))
+      sortOrderP = Trim("" & Request.Form("SortOrder"))
       If Len(sortOrderP) = 0 Then sortOrderP = 0
-      isPrimaryP = ("" & up.Form("IsPrimary") = "1")
+      isPrimaryP = ("" & Request.Form("IsPrimary") = "1")
 
       Dim imgCountP : imgCountP = GetImageCount(productId)
 
@@ -198,8 +188,31 @@ If Request.ServerVariables("REQUEST_METHOD") = "POST" Then
         msg = "Image added by path."
       End If
 
+    Case "update"
+      Dim imageIdU : imageIdU = CLng("" & Request.Form("ImageID"))
+      Dim imagePathU, altTextEdit, sortOrderEdit, isPrimaryEdit
+      imagePathU = Trim("" & Request.Form("ImagePath"))
+      altTextEdit = Trim("" & Request.Form("AltText"))
+      sortOrderEdit = Trim("" & Request.Form("SortOrder"))
+      If Len(sortOrderEdit) = 0 Then sortOrderEdit = 0
+      isPrimaryEdit = ("" & Request.Form("IsPrimary") = "1")
+
+      If Len(imagePathU) = 0 Then
+        errMsg = "ImagePath is required."
+        editImageId = imageIdU
+        editImagePath = imagePathU
+        editAltText = altTextEdit
+        editSortOrder = CLng(sortOrderEdit)
+        editIsPrimary = isPrimaryEdit
+      Else
+        If isPrimaryEdit Then ClearPrimaries productId
+        UpdateImageRow productId, imageIdU, imagePathU, altTextEdit, CLng(sortOrderEdit), isPrimaryEdit
+        msg = "Image updated."
+        editImageId = 0
+      End If
+
     Case "primary"
-      Dim imageIdP : imageIdP = CLng("" & up.Form("ImageID"))
+      Dim imageIdP : imageIdP = CLng("" & Request.Form("ImageID"))
       ClearPrimaries productId
 
       Dim cmdPri : Set cmdPri = Server.CreateObject("ADODB.Command")
@@ -214,7 +227,7 @@ If Request.ServerVariables("REQUEST_METHOD") = "POST" Then
       msg = "Primary image updated."
 
     Case "delete"
-      Dim imageIdD : imageIdD = CLng("" & up.Form("ImageID"))
+      Dim imageIdD : imageIdD = CLng("" & Request.Form("ImageID"))
 
       Dim cmdD : Set cmdD = Server.CreateObject("ADODB.Command")
       Set cmdD.ActiveConnection = conn
@@ -227,8 +240,26 @@ If Request.ServerVariables("REQUEST_METHOD") = "POST" Then
 
       msg = "Image removed."
   End Select
+End If
 
-  Set up = Nothing
+If editImageId > 0 And Len(errMsg) = 0 And Len(editImagePath) = 0 Then
+  Dim cmdE : Set cmdE = Server.CreateObject("ADODB.Command")
+  Set cmdE.ActiveConnection = conn
+  cmdE.CommandType = adCmdText
+  cmdE.CommandText = "SELECT ImagePath, AltText, SortOrder, IsPrimary FROM dbo.ProductImages WHERE ProductID=? AND ImageID=?;"
+  cmdE.Parameters.Append cmdE.CreateParameter("@PID", adInteger, adParamInput, , CInt(productId))
+  cmdE.Parameters.Append cmdE.CreateParameter("@IID", adInteger, adParamInput, , CInt(editImageId))
+  Dim rsEdit : Set rsEdit = cmdE.Execute
+  If Not rsEdit.EOF Then
+    editImagePath = "" & rsEdit("ImagePath")
+    editAltText = "" & rsEdit("AltText")
+    editSortOrder = CLng(rsEdit("SortOrder"))
+    editIsPrimary = CBool(rsEdit("IsPrimary"))
+  Else
+    editImageId = 0
+  End If
+  rsEdit.Close : Set rsEdit = Nothing
+  Set cmdE = Nothing
 End If
 
 Dim sql
@@ -268,11 +299,13 @@ Dim rs : Set rs = conn.Execute(sql)
   <div class="grid">
     <div class="card">
       <h3 style="margin-top:0;">Upload image</h3>
-      <form method="post" enctype="multipart/form-data" action="product-images.asp?productid=<%=productId%>">
-        <input type="hidden" name="action" value="upload" />
+      <form id="uploadForm" method="post" enctype="multipart/form-data"
+            action="product-images.asp?productid=<%=productId%>">
+        <input type="hidden" id="hAction"       name="action"           value="upload" />
+        <input type="hidden" id="hUploadedFile" name="UploadedFileName" value="" />
 
         <label>Image file</label>
-        <input type="file" name="imgFile" accept=".jpg,.jpeg,.png,.webp,.gif" />
+        <input type="file" id="imgFile" name="imgFile" accept=".jpg,.jpeg,.png,.webp,.gif" />
 
         <label>AltText (optional)</label>
         <input name="AltText" />
@@ -283,7 +316,8 @@ Dim rs : Set rs = conn.Execute(sql)
         <label><input type="checkbox" name="IsPrimary" value="1" /> Set as primary (first image is automatically primary)</label>
 
         <div style="margin-top:10px;">
-          <button class="btn" type="submit">Upload</button>
+          <button class="btn" id="uploadBtn" type="submit">Upload</button>
+          <span id="uploadStatus" style="margin-left:10px;color:#666;"></span>
         </div>
       </form>
       <p style="color:#666;">Uploads to: <code>/images/products/<%=productId%>/</code></p>
@@ -308,6 +342,32 @@ Dim rs : Set rs = conn.Execute(sql)
     </div>
   </div>
 
+  <% If editImageId > 0 Then %>
+    <div class="card" style="margin-top:16px;">
+      <h3 style="margin-top:0;">Edit image #<%=editImageId%></h3>
+      <form method="post" action="product-images.asp?productid=<%=productId%>&editid=<%=editImageId%>">
+        <input type="hidden" name="action" value="update" />
+        <input type="hidden" name="ImageID" value="<%=editImageId%>" />
+
+        <label>ImagePath</label>
+        <input name="ImagePath" value="<%=Server.HTMLEncode(editImagePath)%>" />
+
+        <label>AltText (optional)</label>
+        <input name="AltText" value="<%=Server.HTMLEncode(editAltText)%>" />
+
+        <label>SortOrder</label>
+        <input name="SortOrder" value="<%=editSortOrder%>" />
+
+        <label><input type="checkbox" name="IsPrimary" value="1" <% If editIsPrimary Then Response.Write "checked" %> /> Set as primary</label>
+
+        <div style="margin-top:10px;">
+          <button class="btn" type="submit">Save Changes</button>
+          <a class="btn" href="product-images.asp?productid=<%=productId%>" style="text-decoration:none;display:inline-block;">Cancel</a>
+        </div>
+      </form>
+    </div>
+  <% End If %>
+
   <h3>Current images</h3>
   <table>
     <thead>
@@ -326,6 +386,7 @@ Dim rs : Set rs = conn.Execute(sql)
           <td><%=rs("SortOrder")%></td>
           <td><%=IIf(CBool(rs("IsPrimary")), "Yes", "No")%></td>
           <td>
+            <a class="btn" href="product-images.asp?productid=<%=productId%>&editid=<%=rs("ImageID")%>" style="text-decoration:none;display:inline-block;">Edit</a>
             <form method="post" action="product-images.asp?productid=<%=productId%>" style="display:inline;">
               <input type="hidden" name="action" value="primary" />
               <input type="hidden" name="ImageID" value="<%=rs("ImageID")%>" />
@@ -341,6 +402,52 @@ Dim rs : Set rs = conn.Execute(sql)
       <% rs.MoveNext : Loop %>
     </tbody>
   </table>
+<script>
+(function () {
+  var form      = document.getElementById('uploadForm');
+  var fileInput = document.getElementById('imgFile');
+  var statusEl  = document.getElementById('uploadStatus');
+  var btn       = document.getElementById('uploadBtn');
+  var hFile     = document.getElementById('hUploadedFile');
+  if (!form || !fileInput) return;
+
+  form.addEventListener('submit', function (e) {
+    if (!fileInput.files || fileInput.files.length === 0) return;
+    e.preventDefault();
+
+    var file = fileInput.files[0];
+    if (statusEl) statusEl.textContent = 'Uploading…';
+    if (btn) btn.disabled = true;
+
+    var fd = new FormData();
+    fd.append('file1', file, file.name);
+
+    var destPath = 'products/' + <%=productId%>;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/upload.ashx?dest=' + encodeURIComponent(destPath));
+    xhr.onload = function () {
+      if (btn) btn.disabled = false;
+      if (xhr.status >= 200 && xhr.status < 300 && xhr.responseText.indexOf('OK|') === 0) {
+        var savedName = (xhr.responseText.split('|')[1] || '').replace(/^\s+|\s+$/g, '');
+        hFile.value = savedName;
+        fileInput.disabled = true;
+        // Avoid multipart on the follow-up submit so Classic ASP can read Request.Form.
+        form.enctype = 'application/x-www-form-urlencoded';
+        form.encoding = 'application/x-www-form-urlencoded';
+        if (statusEl) statusEl.textContent = 'Saving record…';
+        form.submit();
+      } else {
+        if (statusEl) statusEl.textContent = 'Upload failed: ' + xhr.responseText.slice(0, 120);
+      }
+    };
+    xhr.onerror = function () {
+      if (btn) btn.disabled = false;
+      if (statusEl) statusEl.textContent = 'Request failed.';
+    };
+    xhr.send(fd);
+  });
+}());
+</script>
 </body>
 </html>
 <%
